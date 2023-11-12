@@ -21,7 +21,7 @@ class Args:
     lr: float = 1e-3
     sample_size: int = 5
     alpha: float = 0.5
-    context_item_size: int = 9
+    context_item_size: int = 10
     device: str = "cpu"
     model_path: str = "model.model"
 
