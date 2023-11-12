@@ -1,9 +1,11 @@
 import random
 from dataclasses import dataclass
 
+import matplotlib
 import numpy as np
 import pandas as pd
 import torch
+from sklearn.metrics import r2_score, roc_auc_score, roc_curve
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
@@ -350,3 +352,100 @@ def train(
         test_results.append(result)
 
     return train_results, test_results
+
+
+def plot_loss(
+    train_results: list[dict],
+    test_results: list[dict],
+    loss_name: str,
+    ax: matplotlib.axes.Axes,
+) -> None:
+    train_losses = list(map(lambda r: r[loss_name]["loss"], train_results))
+    test_losses = list(map(lambda r: r[loss_name]["loss"], test_results))
+    ax.plot(train_losses, label="train")
+    ax.plot(test_losses, label="test")
+    ax.set_xlabel("epoch")
+    ax.set_ylabel(f"{loss_name}_loss")
+    ax.legend()
+    ax.grid()
+
+
+def plot_r2_score(
+    train_results: list[dict],
+    test_results: list[dict],
+    loss_name: str,
+    ax: matplotlib.axes.Axes,
+) -> None:
+    train_r2_scores = list(
+        map(
+            lambda r: r2_score(r[loss_name]["y_true"], r[loss_name]["y_pred"]),
+            train_results,
+        )
+    )
+    test_r2_scores = list(
+        map(
+            lambda r: r2_score(r[loss_name]["y_true"], r[loss_name]["y_pred"]),
+            test_results,
+        )
+    )
+
+    ax.plot(train_r2_scores, label="train")
+    ax.plot(test_r2_scores, label="test")
+    ax.set_xlabel("epoch")
+    ax.set_ylabel(f"{loss_name}_r2_score")
+    ax.legend()
+    ax.grid()
+
+
+def plot_roc_auc(
+    train_result: dict, test_result: dict, loss_name: str, ax: matplotlib.axes.Axes
+) -> None:
+    fpr, tpr, _ = roc_curve(
+        train_result[loss_name]["y_true"], train_result[loss_name]["y_pred"]
+    )
+    train_auc = roc_auc_score(
+        train_result[loss_name]["y_true"], train_result[loss_name]["y_pred"]
+    )
+    ax.plot(fpr, tpr, label=f"train = {train_auc:.5f}")
+
+    fpr, tpr, _ = roc_curve(
+        test_result[loss_name]["y_true"], test_result[loss_name]["y_pred"]
+    )
+    test_auc = roc_auc_score(
+        test_result[loss_name]["y_true"], test_result[loss_name]["y_pred"]
+    )
+    ax.plot(fpr, tpr, label=f"test  = {test_auc:.5f}")
+
+    # ax.set_title(loss_name)
+    ax.set_xlabel("false positive rate")
+    ax.set_ylabel("true positive rate")
+    ax.legend()
+    ax.grid()
+
+
+def plot_auc(
+    train_results: list[dict],
+    test_results: list[dict],
+    loss_name: str,
+    ax: matplotlib.axes.Axes,
+) -> None:
+    train_aucs = list(
+        map(
+            lambda r: roc_auc_score(r[loss_name]["y_true"], r[loss_name]["y_pred"]),
+            train_results,
+        )
+    )
+    test_aucs = list(
+        map(
+            lambda r: roc_auc_score(r[loss_name]["y_true"], r[loss_name]["y_pred"]),
+            test_results,
+        )
+    )
+
+    ax.plot(train_aucs, label="train")
+    ax.plot(test_aucs, label="test")
+
+    ax.set_xlabel("epoch")
+    ax.set_ylabel(f"{loss_name}_auc")
+    ax.legend()
+    ax.grid()
