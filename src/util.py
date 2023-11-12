@@ -95,6 +95,7 @@ def load_interaction_df(
 def create_user_features(
     feature_df: pd.DataFrame, split_date: pd.Timestamp | str
 ) -> pd.DataFrame:
+    # TODO: 上側95%点で切る
     # 最新購買日
     recency = split_date - feature_df.groupby("user_id").timestamp.max()  # type: ignore
     recency = (recency.dt.days / 365).rename("recency")
@@ -118,7 +119,7 @@ def create_user_features(
     return user_features
 
 
-def create_targets(target_df: pd.DataFrame) -> tuple[dict, dict]:
+def create_targets(target_df: pd.DataFrame) -> tuple[dict, dict, dict]:
     # CLV
     clv = target_df.user_id.value_counts().sort_index()
     threshold = clv.quantile(0.95)
@@ -126,10 +127,15 @@ def create_targets(target_df: pd.DataFrame) -> tuple[dict, dict]:
     clv[clv >= 1] = 1
     clv_dict = clv.to_dict()
 
+    # 離反
+    churn = clv.copy(deep=True)
+    churn[churn >= 0] = 1
+    churn_dict = churn.to_dict()
+
     # CV商品
     target_items = target_df.groupby("user_id").item_id.agg(list).to_dict()
 
-    return clv_dict, target_items
+    return clv_dict, churn_dict, target_items
 
 
 def encode_user_item_id(
@@ -148,7 +154,7 @@ def create_dataset(
     interaction_df: pd.DataFrame,
     train_split_date: pd.Timestamp | str,
     test_split_date: pd.Timestamp | str,
-) -> tuple[Dataset, Dataset, torch.Tensor]:
+) -> tuple[Dataset, Dataset, np.ndarray, np.ndarray]:
     feature_df = (
         interaction_df[interaction_df.timestamp < train_split_date]
         .sort_values("timestamp")
@@ -169,30 +175,39 @@ def create_dataset(
     )
 
     sequences = feature_df.groupby("user_id").item_id.agg(list).to_dict()
-    user_features = create_user_features(
+    train_user_feature_table = create_user_features(
         feature_df=feature_df, split_date=train_split_date
-    )
-    user_embedding_weight = torch.from_numpy(user_features.values.astype(np.float32))
+    ).values.astype(np.float32)
+    test_user_feature_table = create_user_features(
+        feature_df=pd.concat([feature_df, target_df]).reset_index(drop=True),
+        split_date=test_split_date,
+    ).values.astype(np.float32)
 
-    train_clv_dict, train_target_items = create_targets(target_df=target_df)
-    test_clv_dict, test_target_items = create_targets(target_df=test_df)
+    _, train_churn_dict, train_target_items = create_targets(target_df=target_df)
+    _, test_churn_dict, test_target_items = create_targets(target_df=test_df)
 
     train_dataset = Dataset(
         sequences=sequences,
-        clv_dict=train_clv_dict,
+        clv_dict=train_churn_dict,
         target_items=train_target_items,
     )
     test_dataset = Dataset(
         sequences=sequences,
-        clv_dict=test_clv_dict,
+        clv_dict=test_churn_dict,
         target_items=test_target_items,
     )
-    return train_dataset, test_dataset, user_embedding_weight
+    return (
+        train_dataset,
+        test_dataset,
+        train_user_feature_table,
+        test_user_feature_table,
+    )
 
 
 def run_one_round(
     model: Model,
     dataloader: torch.utils.data.DataLoader,
+    user_feature_table: np.ndarray,
     optimizer: torch.optim.Optimizer,
     args: Args,
     items: list[int],
@@ -239,19 +254,19 @@ def run_one_round(
                 target_labels.append(0)
                 clv_labels.append(clv)
 
-        user_ids = torch.LongTensor(user_ids).to(args.device)
+        user_features = torch.FloatTensor(user_feature_table[user_ids]).to(args.device)
         item_indices = torch.LongTensor(item_indices).to(args.device)
         target_labels = torch.FloatTensor(target_labels).to(args.device)
         clv_labels = torch.FloatTensor(clv_labels).to(args.device)
 
         if is_eval:
             with torch.no_grad():
-                y_clv, y_target = model.forward(user_ids, item_indices)
+                y_clv, y_target = model.forward(user_features, item_indices)
         else:
-            y_clv, y_target = model.forward(user_ids, item_indices)
+            y_clv, y_target = model.forward(user_features, item_indices)
 
-        target_loss = torch.sqrt(torch.nn.functional.mse_loss(y_target, target_labels))
-        clv_loss = torch.sqrt(torch.nn.functional.mse_loss(y_clv, clv_labels))
+        target_loss = torch.nn.functional.binary_cross_entropy(y_target, target_labels)
+        clv_loss = torch.nn.functional.binary_cross_entropy(y_clv, clv_labels)
         loss = target_loss * args.alpha + clv_loss * (1 - args.alpha)
 
         if not is_eval:
@@ -269,12 +284,6 @@ def run_one_round(
     for term_name in result.keys():
         result[term_name]["loss"] /= len(dataloader)
 
-    print(
-        f"[loss] target_loss: {result['target']['loss']:.6f}, clv_loss: {result['clv']['loss']:.6f}"
-    )
-    print(
-        f"[alpha_weighted_loss] target_loss: {result['target']['loss'] * args.alpha:.6f}, clv_loss: {result['clv']['loss'] * (1 - args.alpha):.6f}"
-    )
     return result
 
 
@@ -282,6 +291,8 @@ def train(
     model: Model,
     train_dataset: Dataset,
     test_dataset: Dataset,
+    train_user_feature_table: np.ndarray,
+    test_user_feature_table: np.ndarray,
     args: Args,
     items: list[int],
 ) -> tuple[list[dict], list[dict]]:
@@ -306,17 +317,35 @@ def train(
     for epoch in range(args.epochs):
         print(f"[epoch: {epoch + 1}/{args.epochs}]")
         result = run_one_round(
-            model, train_dataloader, optimizer=optimizer, args=args, items=items
+            model=model,
+            dataloader=train_dataloader,
+            user_feature_table=train_user_feature_table,
+            optimizer=optimizer,
+            args=args,
+            items=items,
+        )
+        print(
+            f"[train][loss] target_loss: {result['target']['loss']:.6f}, clv_loss: {result['clv']['loss']:.6f}"
+        )
+        print(
+            f"[train][alpha_weighted_loss] target_loss: {result['target']['loss'] * args.alpha:.6f}, clv_loss: {result['clv']['loss'] * (1 - args.alpha):.6f}"
         )
         train_results.append(result)
 
         result = run_one_round(
-            model,
-            test_dataloader,
+            model=model,
+            dataloader=test_dataloader,
+            user_feature_table=test_user_feature_table,
             optimizer=optimizer,
             args=args,
             items=items,
             is_eval=True,
+        )
+        print(
+            f"[test][loss] target_loss: {result['target']['loss']:.6f}, clv_loss: {result['clv']['loss']:.6f}"
+        )
+        print(
+            f"[test][alpha_weighted_loss] target_loss: {result['target']['loss'] * args.alpha:.6f}, clv_loss: {result['clv']['loss'] * (1 - args.alpha):.6f}"
         )
         test_results.append(result)
 
