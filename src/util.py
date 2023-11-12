@@ -20,6 +20,7 @@ class Args:
     epochs: int = 10
     lr: float = 1e-3
     sample_size: int = 5
+    negative_sample_size: int = 5
     alpha: float = 0.5
     context_item_size: int = 10
     device: str = "cpu"
@@ -239,7 +240,7 @@ def run_one_round(
                 )
 
             # 正例
-            for _ in range(min(args.sample_size, len(target_items))):
+            for _ in range(min(args.negative_sample_size, len(target_items))):
                 v = list(context_items)
                 v.append(target_items[random.randrange(0, len(target_items))])
                 user_ids.append(user_id)
@@ -248,7 +249,7 @@ def run_one_round(
                 clv_labels.append(clv)
 
             # 負例
-            for _ in range(args.sample_size):
+            for _ in range(args.negative_sample_size):
                 v = list(context_items)
                 v.append(items[random.randrange(len(items))])
                 user_ids.append(user_id)
