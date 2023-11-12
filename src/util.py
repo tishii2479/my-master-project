@@ -195,7 +195,7 @@ def run_one_round(
     dataloader: torch.utils.data.DataLoader,
     optimizer: torch.optim.Optimizer,
     args: Args,
-    item_size: int,
+    items: list[int],
     is_eval: bool = False,
 ) -> dict:
     result: dict[str, dict] = {
@@ -233,7 +233,7 @@ def run_one_round(
             # 負例
             for _ in range(args.sample_size):
                 v = list(context_items)
-                v.append(random.randrange(item_size))
+                v.append(items[random.randrange(len(items))])
                 user_ids.append(user_id)
                 item_indices.append(v)
                 target_labels.append(0)
@@ -243,11 +243,14 @@ def run_one_round(
         item_indices = torch.LongTensor(item_indices).to(args.device)
         target_labels = torch.FloatTensor(target_labels).to(args.device)
         clv_labels = torch.FloatTensor(clv_labels).to(args.device)
-        y_clv, y_target = model.forward(user_ids, item_indices)
 
-        target_loss = torch.nn.functional.binary_cross_entropy(
-            y_target, target_labels
-        ) / target_labels.size(0)
+        if is_eval:
+            with torch.no_grad():
+                y_clv, y_target = model.forward(user_ids, item_indices)
+        else:
+            y_clv, y_target = model.forward(user_ids, item_indices)
+
+        target_loss = torch.sqrt(torch.nn.functional.mse_loss(y_target, target_labels))
         clv_loss = torch.sqrt(torch.nn.functional.mse_loss(y_clv, clv_labels))
         loss = target_loss * args.alpha + clv_loss * (1 - args.alpha)
 
@@ -267,10 +270,10 @@ def run_one_round(
         result[term_name]["loss"] /= len(dataloader)
 
     print(
-        f"[loss] target_loss: {result['target']['loss']}, clv_loss: {result['clv']['loss']}"
+        f"[loss] target_loss: {result['target']['loss']:.6f}, clv_loss: {result['clv']['loss']:.6f}"
     )
     print(
-        f"[alpha_weighted_loss] target_loss: {result['target']['loss'] * args.alpha}, clv_loss: {result['clv']['loss'] * (1 - args.alpha)}"
+        f"[alpha_weighted_loss] target_loss: {result['target']['loss'] * args.alpha:.6f}, clv_loss: {result['clv']['loss'] * (1 - args.alpha):.6f}"
     )
     return result
 
@@ -280,19 +283,19 @@ def train(
     train_dataset: Dataset,
     test_dataset: Dataset,
     args: Args,
-    item_size: int,
+    items: list[int],
 ) -> tuple[list[dict], list[dict]]:
     train_dataloader = torch.utils.data.DataLoader(
         dataset=train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        collate_fn=lambda x: x,
+        collate_fn=lambda x: x,  # 各データは形式が異なるため、バッチ化せずにそのまま返す
     )
     test_dataloader = torch.utils.data.DataLoader(
         dataset=test_dataset,
         batch_size=args.batch_size,
-        shuffle=True,
-        collate_fn=lambda x: x,
+        shuffle=False,
+        collate_fn=lambda x: x,  # 各データは形式が異なるため、バッチ化せずにそのまま返す
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -303,7 +306,7 @@ def train(
     for epoch in range(args.epochs):
         print(f"[epoch: {epoch + 1}/{args.epochs}]")
         result = run_one_round(
-            model, train_dataloader, optimizer=optimizer, args=args, item_size=item_size
+            model, train_dataloader, optimizer=optimizer, args=args, items=items
         )
         train_results.append(result)
 
@@ -312,7 +315,7 @@ def train(
             test_dataloader,
             optimizer=optimizer,
             args=args,
-            item_size=item_size,
+            items=items,
             is_eval=True,
         )
         test_results.append(result)
