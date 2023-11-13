@@ -15,8 +15,10 @@ from src.model import *
 @dataclass
 class Args:
     d_model: int = 32
+    dim_feedforward: int = 64
     batch_size: int = 64
     nhead: int = 4
+    num_layers: int = 4
     epochs: int = 10
     lr: float = 1e-3
     sample_size: int = 5
@@ -212,7 +214,7 @@ def plot_loss(
     test_results: list[dict],
     loss_name: str,
     ax: matplotlib.axes.Axes,
-) -> None:
+) -> tuple[list, list]:
     train_losses = list(map(lambda r: r[loss_name]["loss"], train_results))
     test_losses = list(map(lambda r: r[loss_name]["loss"], test_results))
     ax.plot(train_losses, label="train")
@@ -222,13 +224,15 @@ def plot_loss(
     ax.legend()
     ax.grid()
 
+    return train_losses, test_losses
+
 
 def plot_r2_score(
     train_results: list[dict],
     test_results: list[dict],
     loss_name: str,
     ax: matplotlib.axes.Axes,
-) -> None:
+) -> tuple[list, list]:
     train_r2_scores = list(
         map(
             lambda r: r2_score(r[loss_name]["y_true"], r[loss_name]["y_pred"]),
@@ -249,10 +253,12 @@ def plot_r2_score(
     ax.legend()
     ax.grid()
 
+    return train_r2_scores, test_r2_scores
+
 
 def plot_roc_auc(
     train_result: dict, test_result: dict, loss_name: str, ax: matplotlib.axes.Axes
-) -> None:
+) -> tuple[list, list]:
     fpr, tpr, _ = roc_curve(
         train_result[loss_name]["y_true"], train_result[loss_name]["y_pred"]
     )
@@ -269,11 +275,12 @@ def plot_roc_auc(
     )
     ax.plot(fpr, tpr, label=f"test  = {test_auc:.5f}")
 
-    # ax.set_title(loss_name)
     ax.set_xlabel("false positive rate")
     ax.set_ylabel("true positive rate")
     ax.legend()
     ax.grid()
+
+    return train_auc, test_auc
 
 
 def plot_auc(
@@ -281,7 +288,7 @@ def plot_auc(
     test_results: list[dict],
     loss_name: str,
     ax: matplotlib.axes.Axes,
-) -> None:
+) -> tuple[list, list]:
     train_aucs = list(
         map(
             lambda r: roc_auc_score(r[loss_name]["y_true"], r[loss_name]["y_pred"]),
@@ -302,3 +309,5 @@ def plot_auc(
     ax.set_ylabel(f"{loss_name}_auc")
     ax.legend()
     ax.grid()
+
+    return train_aucs, test_aucs
