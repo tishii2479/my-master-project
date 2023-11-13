@@ -54,22 +54,29 @@ class Dataset(torch.utils.data.Dataset):
                 ユーザの将来CV商品
                 [user_id : target_items]
         """
-        self.features = []
+        self.user_idx = []
+        self.sequences = []
         self.target_items = []
         self.clv = []
 
         for user_idx, sequence in tqdm(sequences.items()):
-            self.features.append((user_idx, sequence))
+            self.user_idx.append(user_idx)
+            self.sequences.append(sequence)
             self.target_items.append(
                 target_items[user_idx] if user_idx in target_items else []
             )
             self.clv.append(clv_dict[user_idx] if user_idx in clv_dict else 0)
 
     def __len__(self) -> int:
-        return len(self.features)
+        return len(self.user_idx)
 
-    def __getitem__(self, idx: int) -> tuple[tuple[int, list[int]], list[int], float]:
-        return self.features[idx], self.target_items[idx], self.clv[idx]
+    def __getitem__(self, idx: int) -> tuple[int, list[int], list[int], float]:
+        return (
+            self.user_idx[idx],
+            self.sequences[idx],
+            self.target_items[idx],
+            self.clv[idx],
+        )
 
 
 def load_interaction_df(
@@ -311,3 +318,34 @@ def plot_auc(
     ax.grid()
 
     return train_aucs, test_aucs
+
+
+def calc_hit_ratio(target_items: list[int], recommendation: list[int], k: int) -> float:
+    if len(set(target_items) & set(recommendation[:k])) > 0:
+        return 1
+    return 0
+
+
+def calc_precision(target_items: list[int], recommendation: list[int], k: int) -> float:
+    return len(set(target_items) & set(recommendation[:k])) / k
+
+
+def calc_recall(target_items: list[int], recommendation: list[int], k: int) -> float:
+    return len(set(target_items) & set(recommendation[:k])) / len(target_items)
+
+
+def calc_mrr(target_items: list[int], recommendation: list[int], k: int) -> float:
+    s = set(target_items)
+    for i, item in enumerate(recommendation[:k]):
+        if item in s:
+            return 1 / (i + 1)
+    return 0
+
+
+def calc_map(target_items: list[int], recommendation: list[int], k: int) -> float:
+    s = set(target_items)
+    precision_sum = 0.0
+    for i, item in enumerate(recommendation[:k]):
+        if item in s:
+            precision_sum += calc_precision(target_items, recommendation, i + 1)
+    return precision_sum / len(target_items)
