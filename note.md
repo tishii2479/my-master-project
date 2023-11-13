@@ -102,3 +102,12 @@
     rerank_sample_size = 50
     top_k = 10
     ```
+
+- "out/rec6.csv"
+    ```
+    leaky_relu+pe@large
+    before_rerank_size = 50
+    filter_sample_size = 10
+    rerank_sample_size = 10
+    top_k = 10
+    ```
