@@ -1,5 +1,7 @@
+import collections
 import random
 from dataclasses import dataclass
+from typing import Optional
 
 import matplotlib
 import numpy as np
@@ -79,12 +81,41 @@ class Dataset(torch.utils.data.Dataset):
         )
 
 
+class NegativeSampler:
+    def __init__(self, sequences: dict[int, list[int]], power: float = 0.75) -> None:
+        counts: collections.Counter = collections.Counter()
+        for sequence in sequences.values():
+            for item in sequence:
+                counts[item] += 1
+
+        self.vocab_size = len(counts)
+
+        self.word_p = np.zeros(self.vocab_size)
+        for i in range(self.vocab_size):
+            self.word_p[i] = counts[i]
+
+        self.word_p = np.power(self.word_p, power)
+        self.word_p /= np.sum(self.word_p)
+
+    def sample(self, size: int | tuple) -> np.ndarray:
+        # 正解ラベルが含まれていても無視する
+        negative_sample = np.random.choice(
+            self.vocab_size,
+            size=size,
+            replace=True,
+            p=self.word_p,
+        )
+        return negative_sample
+
+
 def load_interaction_df(
     last_review_date: pd.Timestamp | str,
     train_split_date: pd.Timestamp | str,
 ) -> tuple[pd.DataFrame, LabelEncoder, LabelEncoder]:
-    interaction_df = pd.read_csv("../data/ml-25m/ratings.csv").rename(
-        columns={"userId": "user_id", "movieId": "item_id"}
+    interaction_df = pd.read_csv(
+        "../data/ml-25m/ratings.csv", dtype={"userId": str, "movieId": str}
+    ).rename(
+        columns={"userId": "user_id", "movieId": "item_id"},
     )
     interaction_df.timestamp = pd.to_datetime(interaction_df.timestamp, unit="s")
 
@@ -152,9 +183,13 @@ def create_targets(target_df: pd.DataFrame) -> tuple[dict, dict, dict]:
 
 def encode_user_item_id(
     interaction_df: pd.DataFrame,
+    mask_token: Optional[str] = None,
 ) -> tuple[pd.DataFrame, LabelEncoder, LabelEncoder]:
     user_le = LabelEncoder().fit(interaction_df.user_id)
-    item_le = LabelEncoder().fit(interaction_df.item_id)
+    items = items = interaction_df.item_id.values.tolist()
+    if mask_token is not None:
+        items.append(mask_token)
+    item_le = LabelEncoder().fit(items)
 
     interaction_df.user_id = user_le.transform(interaction_df.user_id)
     interaction_df.item_id = item_le.transform(interaction_df.item_id)
@@ -166,7 +201,8 @@ def create_dataset(
     interaction_df: pd.DataFrame,
     train_split_date: pd.Timestamp | str,
     test_split_date: pd.Timestamp | str,
-) -> tuple[Dataset, Dataset, np.ndarray, np.ndarray]:
+) -> tuple[Dataset, Dataset, np.ndarray, np.ndarray, NegativeSampler, NegativeSampler]:
+    # TODO: refactor
     feature_df = (
         interaction_df[interaction_df.timestamp < train_split_date]
         .sort_values("timestamp")
@@ -186,7 +222,13 @@ def create_dataset(
         .reset_index(drop=True)
     )
 
-    sequences = feature_df.groupby("user_id").item_id.agg(list).to_dict()
+    train_sequences = feature_df.groupby("user_id").item_id.agg(list).to_dict()
+    test_sequences = (
+        pd.concat([feature_df, target_df])
+        .groupby("user_id")
+        .item_id.agg(list)
+        .to_dict()
+    )
     train_user_feature_table = create_user_features(
         feature_df=feature_df, split_date=train_split_date
     ).values.astype(np.float32)
@@ -199,20 +241,26 @@ def create_dataset(
     _, test_churn_dict, test_target_items = create_targets(target_df=test_df)
 
     train_dataset = Dataset(
-        sequences=sequences,
+        sequences=train_sequences,
         clv_dict=train_churn_dict,
         target_items=train_target_items,
     )
     test_dataset = Dataset(
-        sequences=sequences,
+        sequences=test_sequences,
         clv_dict=test_churn_dict,
         target_items=test_target_items,
     )
+
+    train_negative_sampler = NegativeSampler(sequences=train_sequences)
+    test_negative_sampler = NegativeSampler(sequences=test_sequences)
+
     return (
         train_dataset,
         test_dataset,
         train_user_feature_table,
         test_user_feature_table,
+        train_negative_sampler,
+        test_negative_sampler,
     )
 
 

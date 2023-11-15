@@ -45,6 +45,7 @@
     - ランダムに選ぶのではなく、時系列で普通に選ぶ？
     - ランダムに選んだ後に時系列順に並び直す？
 - 推薦結果に対して、多様性の指標を計算する
+- target_itemがあるユーザだけにする？
 
 ## リファクタ
 
@@ -106,6 +107,15 @@
 - "out/rec6.csv"
     ```
     leaky_relu+pe@large
+    before_rerank_size = 50
+    filter_sample_size = 10
+    rerank_sample_size = 10
+    top_k = 10
+    ```
+
+- "out/rec7.csv"
+    ```
+    leaky_relu+pe+user_embedding
     before_rerank_size = 50
     filter_sample_size = 10
     rerank_sample_size = 10
