@@ -82,17 +82,19 @@ class Dataset(torch.utils.data.Dataset):
 
 
 class NegativeSampler:
-    def __init__(self, sequences: dict[int, list[int]], power: float = 0.75) -> None:
+    def __init__(
+        self, sequences: dict[int, list[int]], item_size: int, power: float = 0.75
+    ) -> None:
+        self.item_size = item_size
+
         counts: collections.Counter = collections.Counter()
         for sequence in sequences.values():
             for item in sequence:
                 counts[item] += 1
 
-        self.vocab_size = len(counts)
-
-        self.word_p = np.zeros(self.vocab_size)
-        for i in range(self.vocab_size):
-            self.word_p[i] = counts[i]
+        self.word_p = np.zeros(self.item_size)
+        for i in range(self.item_size):
+            self.word_p[i] = max(1, counts[i])
 
         self.word_p = np.power(self.word_p, power)
         self.word_p /= np.sum(self.word_p)
@@ -100,7 +102,7 @@ class NegativeSampler:
     def sample(self, size: int | tuple) -> np.ndarray:
         # 正解ラベルが含まれていても無視する
         negative_sample = np.random.choice(
-            self.vocab_size,
+            self.item_size,
             size=size,
             replace=True,
             p=self.word_p,
@@ -201,7 +203,8 @@ def create_dataset(
     interaction_df: pd.DataFrame,
     train_split_date: pd.Timestamp | str,
     test_split_date: pd.Timestamp | str,
-) -> tuple[Dataset, Dataset, np.ndarray, np.ndarray, NegativeSampler, NegativeSampler]:
+    item_size: int,
+) -> tuple[Dataset, Dataset, np.ndarray, np.ndarray, NegativeSampler]:
     # TODO: refactor
     feature_df = (
         interaction_df[interaction_df.timestamp < train_split_date]
@@ -251,16 +254,14 @@ def create_dataset(
         target_items=test_target_items,
     )
 
-    train_negative_sampler = NegativeSampler(sequences=train_sequences)
-    test_negative_sampler = NegativeSampler(sequences=test_sequences)
+    negative_sampler = NegativeSampler(sequences=test_sequences, item_size=item_size)
 
     return (
         train_dataset,
         test_dataset,
         train_user_feature_table,
         test_user_feature_table,
-        train_negative_sampler,
-        test_negative_sampler,
+        negative_sampler,
     )
 
 
