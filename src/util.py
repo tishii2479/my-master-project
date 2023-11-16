@@ -113,6 +113,7 @@ class NegativeSampler:
 def load_interaction_df(
     last_review_date: pd.Timestamp | str,
     train_split_date: pd.Timestamp | str,
+    mask_token: Optional[str] = None,
 ) -> tuple[pd.DataFrame, LabelEncoder, LabelEncoder]:
     interaction_df = pd.read_csv(
         "../data/ml-25m/ratings.csv", dtype={"userId": str, "movieId": str}
@@ -132,7 +133,7 @@ def load_interaction_df(
     ].reset_index(drop=True)
 
     interaction_df, user_le, item_le = encode_user_item_id(
-        interaction_df=interaction_df
+        interaction_df=interaction_df, mask_token=mask_token
     )
     return interaction_df, user_le, item_le
 

@@ -58,6 +58,7 @@
 
 - アイテムを入れないで離反予測
 - アイテムだけで離反予測
+- マルチタスクにしているメリットがないとダメ
 
 ## 結果の記録
 
@@ -121,3 +122,10 @@
     rerank_sample_size = 10
     top_k = 10
     ```
+
+## BERT4Recの実装
+
+- `[batch_size, masked_item_size, 1, d_model]`
+- `[batch_size, masked_item_size, 1 + negative_sample_size, d_model]`
+- `[batch_size, masked_item_size, 1 + negative_sample_size]`
+
