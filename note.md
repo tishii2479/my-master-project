@@ -123,9 +123,8 @@
     top_k = 10
     ```
 
-## BERT4Recの実装
-
-- `[batch_size, masked_item_size, 1, d_model]`
-- `[batch_size, masked_item_size, 1 + negative_sample_size, d_model]`
-- `[batch_size, masked_item_size, 1 + negative_sample_size]`
-
+- `batch_first=True`の副作用を調べる
+    - `_nested_tensor_from_mask_left_aligned`が走らなくなる
+    - https://github.com/pytorch/pytorch/blob/f27ab241a48c12e9b625e576329c943647d8ffbf/aten/src/ATen/native/nested/NestedTensorMath.cpp#L93
+    - `padding`は全て最後についている必要がある？
+        - TODO: `cpu`で実行して、paddingを左につけた場合を見る

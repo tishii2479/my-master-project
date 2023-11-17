@@ -1,5 +1,6 @@
 .python-version
 data
 *.model
+*.pt
 __pycache__
 out/

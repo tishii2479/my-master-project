@@ -99,11 +99,11 @@ class NegativeSampler:
         self.word_p = np.power(self.word_p, power)
         self.word_p /= np.sum(self.word_p)
 
-    def sample(self, size: int | tuple) -> np.ndarray:
+    def sample(self, shape: int | tuple) -> np.ndarray:
         # 正解ラベルが含まれていても無視する
         negative_sample = np.random.choice(
             self.item_size,
-            size=size,
+            size=shape,
             replace=True,
             p=self.word_p,
         )
@@ -113,6 +113,7 @@ class NegativeSampler:
 def load_interaction_df(
     last_review_date: pd.Timestamp | str,
     train_split_date: pd.Timestamp | str,
+    padding_token: str = "[pad]",
     mask_token: Optional[str] = None,
 ) -> tuple[pd.DataFrame, LabelEncoder, LabelEncoder]:
     interaction_df = pd.read_csv(
@@ -133,7 +134,9 @@ def load_interaction_df(
     ].reset_index(drop=True)
 
     interaction_df, user_le, item_le = encode_user_item_id(
-        interaction_df=interaction_df, mask_token=mask_token
+        interaction_df=interaction_df,
+        padding_token=padding_token,
+        mask_token=mask_token,
     )
     return interaction_df, user_le, item_le
 
@@ -186,10 +189,11 @@ def create_targets(target_df: pd.DataFrame) -> tuple[dict, dict, dict]:
 
 def encode_user_item_id(
     interaction_df: pd.DataFrame,
+    padding_token: str = "[pad]",
     mask_token: Optional[str] = None,
 ) -> tuple[pd.DataFrame, LabelEncoder, LabelEncoder]:
     user_le = LabelEncoder().fit(interaction_df.user_id)
-    items = items = interaction_df.item_id.values.tolist()
+    items = interaction_df.item_id.values.tolist() + [padding_token]
     if mask_token is not None:
         items.append(mask_token)
     item_le = LabelEncoder().fit(items)
