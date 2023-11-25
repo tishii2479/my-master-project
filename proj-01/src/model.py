@@ -37,6 +37,23 @@ class PositionalEncoding(torch.nn.Module):
         return self.dropout(x)
 
 
+class PositionalEncoding2(torch.nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.positional_embedding = torch.nn.Embedding(
+            num_embeddings=max_len, embedding_dim=d_model
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Arguments:
+            x: Tensor, shape ``[batch_size, seq_len, embedding_dim]``
+        """
+        i = torch.LongTensor(list(range(x.size(-2))))
+        x = x + self.positional_embedding.forward(i)
+        return x
+
+
 class Model4(torch.nn.Module):
     def __init__(
         self,
