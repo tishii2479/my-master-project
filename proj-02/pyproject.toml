@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "my-master-thesis-proj-02"
+version = "0.1.0"
+description = ""
+authors = ["Tatsuya Ishii <tishii2479@gmail.com>"]
+readme = "README.md"
+packages = [{include = "proj_02"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.11"
+pandas = "1.5.2"
+numpy = "1.23.5"
+scikit-learn = "1.1.3"
+obp = "^0.5.7"
+ipykernel = "^6.26.0"
+matplotlib = "^3.8.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
