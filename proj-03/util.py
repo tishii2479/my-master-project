@@ -2,6 +2,8 @@ import abc
 import dataclasses
 import datetime
 import json
+import pathlib
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -9,6 +11,7 @@ import pandas as pd
 
 @dataclasses.dataclass
 class Args:
+    exp_name: Optional[str] = None
     mode: str = "valid"
     sampling: str = "uplift-based-pointwise"
     seed: int = 0
@@ -152,8 +155,7 @@ class UpliftBasedPointwiseSampler(Sampler):
 
 
 def eval(
-    X_u: np.ndarray,
-    X_v: np.ndarray,
+    rec_list: list[list[int]],
     df: pd.DataFrame,
     top_k: list[int],
     args: Args,
@@ -168,7 +170,7 @@ def eval(
         for u, dict_u in df.iterrows():
             if dict_u[f"{args.mode}_eval_purchased_items"] is None:
                 continue
-            L_M = set(np.matmul(X_u[u], X_v.T).argsort()[-k:])
+            L_M = set(rec_list[u])
             L_D = set(dict_u[f"{args.mode}_eval_recommended_items"])
             L_M_and_D = list(L_M & L_D)
             L_M_not_D = list(L_M - L_D)
@@ -232,7 +234,7 @@ def train_rmf(
         ).mean()
         losses.append(L)
         print(
-            f"[{t+1:8}/{args.epochs}] {L:.5}",
+            f"[{t+1:{len(str(args.epochs))}}/{args.epochs}] {L:.5}",
             end="\r",
         )
 
@@ -248,8 +250,12 @@ def train_rmf(
 
 def add_record(args: Args, evaluations: dict) -> None:
     record = {"args": vars(args), "evaluations": evaluations}
-    log_file = f"log/{datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.json"
-    with open(log_file, "w") as f:
+    log_path = pathlib.Path("./log/")
+    if args.exp_name is not None:
+        log_path /= args.exp_name
+    log_path.mkdir(parents=True, exist_ok=True)
+    log_path /= f"{datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.json"
+    with open(log_path, "w") as f:
         json.dump(record, f, indent=4, sort_keys=True)
 
 
