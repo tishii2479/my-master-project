@@ -3,8 +3,9 @@ name = "proj-03"
 version = "0.1.0"
 description = ""
 authors = ["Tatsuya Ishii <tishii2479@gmail.com>"]
-readme = "README.md"
-packages = [{include = "proj_03"}]
+packages = [
+    { include = "lib", from = "src" }
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -17,6 +18,7 @@ matplotlib = "^3.8.2"
 seaborn = "^0.13.1"
 torch = "^2.1.2"
 mypy = "^1.8.0"
+classopt = "^0.2.1"
 
 
 [build-system]

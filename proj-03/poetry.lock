@@ -94,6 +94,17 @@ files = [
 pycparser = "*"
 
 [[package]]
+name = "classopt"
+version = "0.2.1"
+description = "Arguments parser with class for Python, inspired by StructOpt"
+optional = false
+python-versions = ">=3.7,<4.0"
+files = [
+    {file = "classopt-0.2.1-py3-none-any.whl", hash = "sha256:26419443f3a8fee90e73bcff15f608998ae9ad754c61a8903c0713289826c2d4"},
+    {file = "classopt-0.2.1.tar.gz", hash = "sha256:6c540b8fa6ef409a97dfe90fede83b4feaa6384f1e53a2fb241ca986d6137a32"},
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
@@ -1936,4 +1947,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "91da55f67ad400fbc25636bda5be26b98511530e43a6df7401713e6628e6149b"
+content-hash = "bb3ab99ae8043f37e384b461c9f0a6e6d369fd534ab23bf6ea288b6df25ee9a4"

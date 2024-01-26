@@ -6,19 +6,20 @@ import pathlib
 import random
 from typing import Optional
 
+import classopt
 import numpy as np
 import pandas as pd
 import torch
 import tqdm
 
-from model import MatrixFactorization, Model
+from lib.model import MatrixFactorization, Model
 
 TOP_K = [10, 30, 100]
 
 
-@dataclasses.dataclass
+@classopt.classopt(default_long=True)
 class Args:
-    exp_name: Optional[str] = None
+    exp_name: str = None  # type: ignore
     mode: str = "valid"
     model: str = "mf"
     sampling: str = "uplift-based-pointwise"
@@ -27,7 +28,7 @@ class Args:
     gamma_p: float = 0.2
     gamma_r: float = 0.5
     eta: float = 1e-2
-    lmda: float = 1e-4
+    lmda: float = 1e-8
     d: int = 100
     batch_size: int = 1_000
     eval_step: int = 1_000
@@ -212,7 +213,6 @@ def train_nn(
     item_n: int,
     args: Args,
 ) -> tuple[torch.nn.Module, list[float], list[dict]]:
-    print("args:", args)
     set_seed(seed=args.seed)
 
     if args.model == "mf":
