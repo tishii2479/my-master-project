@@ -16,6 +16,7 @@ scikit-learn = "^1.4.0"
 matplotlib = "^3.8.2"
 seaborn = "^0.13.1"
 torch = "^2.1.2"
+mypy = "^1.8.0"
 
 
 [build-system]

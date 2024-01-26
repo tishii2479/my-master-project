@@ -3,26 +3,36 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import random
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+import torch
+import tqdm
+
+from model import MatrixFactorization, Model
+
+TOP_K = [10, 30, 100]
 
 
 @dataclasses.dataclass
 class Args:
     exp_name: Optional[str] = None
     mode: str = "valid"
+    model: str = "mf"
     sampling: str = "uplift-based-pointwise"
     seed: int = 0
     alpha: float = 0.6
     gamma_p: float = 0.2
     gamma_r: float = 0.5
     eta: float = 1e-2
-    lmda: float = 1e-2
+    lmda: float = 1e-4
     d: int = 100
     batch_size: int = 1_000
-    epochs: int = 10_000
+    eval_step: int = 1_000
+    epochs: int = 5_000
+    device: str = "cpu"
 
 
 class Sampler(abc.ABC):
@@ -39,16 +49,13 @@ class Sampler(abc.ABC):
         self.df_set_dict = df_set_dict
 
     @abc.abstractmethod
-    def sample(
-        self, rnd: np.random.RandomState, args: Args
-    ) -> tuple[list[int], list[int], list[int]]:
+    def sample(self, args: Args) -> tuple[list[int], list[int], list[int]]:
         raise NotImplementedError()
 
 
 class AccuracyBasedPointwiseSampler(Sampler):
     def sample(
         self,
-        rnd: np.random.RandomState,
         args: Args,
     ) -> tuple[list[int], list[int], list[int]]:
         u_list, i_list, r_ui_list = (
@@ -60,16 +67,18 @@ class AccuracyBasedPointwiseSampler(Sampler):
         for b in range(args.batch_size):
             C_P = 0
             C_NP = 1
-            u = rnd.randint(0, self.user_n)
-            C = rnd.choice([C_P, C_NP], p=[args.gamma_p, 1 - args.gamma_p])
+            u = np.random.randint(0, self.user_n)
+            C = np.random.choice([C_P, C_NP], p=[args.gamma_p, 1 - args.gamma_p])
 
             if C == C_P:
                 r_ui = 1
-                i = rnd.choice(self.df_dict[u][f"{args.mode}_train_purchased_items"])
+                i = np.random.choice(
+                    self.df_dict[u][f"{args.mode}_train_purchased_items"]
+                )
             else:
                 r_ui = 0
                 while True:
-                    i = rnd.randint(0, self.item_n)
+                    i = np.random.randint(0, self.item_n)
                     if (
                         i
                         not in self.df_set_dict[u][f"{args.mode}_train_purchased_items"]
@@ -84,7 +93,6 @@ class AccuracyBasedPointwiseSampler(Sampler):
 class UpliftBasedPointwiseSampler(Sampler):
     def sample(
         self,
-        rnd: np.random.RandomState,
         args: Args,
     ) -> tuple[list[int], list[int], list[int]]:
         C_RP = 0
@@ -101,26 +109,28 @@ class UpliftBasedPointwiseSampler(Sampler):
         )
 
         for b in range(args.batch_size):
-            u = rnd.randint(0, self.user_n)
-            C = rnd.choice([C_RP, C_NR_NP, C_other], p=[p_C_RP, p_C_NR_NP, p_C_other])
+            u = np.random.randint(0, self.user_n)
+            C = np.random.choice(
+                [C_RP, C_NR_NP, C_other], p=[p_C_RP, p_C_NR_NP, p_C_other]
+            )
 
             if C == C_RP:
                 r_ui = 1
 
                 while True:
-                    i = rnd.choice(
+                    i = np.random.choice(
                         self.df_dict[u][f"{args.mode}_train_purchased_items"]
                     )
                     if i in self.df_set_dict[u][f"{args.mode}_train_recommended_items"]:
                         break
             elif C == C_NR_NP:
-                if rnd.random() <= args.alpha:
+                if np.random.random() <= args.alpha:
                     r_ui = 1
                 else:
                     r_ui = 0
 
                 while True:
-                    i = rnd.randint(0, self.item_n)
+                    i = np.random.randint(0, self.item_n)
                     if (
                         i
                         not in self.df_set_dict[u][f"{args.mode}_train_purchased_items"]
@@ -134,7 +144,7 @@ class UpliftBasedPointwiseSampler(Sampler):
                 r_ui = 0
 
                 while True:
-                    i = rnd.randint(0, self.item_n)
+                    i = np.random.randint(0, self.item_n)
                     if (
                         i in self.df_set_dict[u][f"{args.mode}_train_purchased_items"]
                         and i
@@ -157,7 +167,6 @@ class UpliftBasedPointwiseSampler(Sampler):
 def eval(
     rec_list: list[list[int]],
     df: pd.DataFrame,
-    top_k: list[int],
     args: Args,
 ) -> dict[str, float]:
     acc = 0
@@ -166,11 +175,11 @@ def eval(
 
     result = {}
 
-    for k in top_k:
+    for k in TOP_K:
         for u, dict_u in df.iterrows():
             if dict_u[f"{args.mode}_eval_purchased_items"] is None:
                 continue
-            L_M = set(rec_list[u])
+            L_M = set(rec_list[u][:k])
             L_D = set(dict_u[f"{args.mode}_eval_recommended_items"])
             L_M_and_D = list(L_M & L_D)
             L_M_not_D = list(L_M - L_D)
@@ -197,15 +206,25 @@ def eval(
     return result
 
 
-def train_rmf(
+def train_nn(
     df: pd.DataFrame,
     user_n: int,
     item_n: int,
     args: Args,
-) -> tuple[np.ndarray, np.ndarray, list[float]]:
-    rnd = np.random.RandomState(args.seed)
-    X_u = rnd.normal(size=(user_n, args.d))
-    X_v = rnd.normal(size=(item_n, args.d))
+) -> tuple[torch.nn.Module, list[float], list[dict]]:
+    print("args:", args)
+    set_seed(seed=args.seed)
+
+    if args.model == "mf":
+        model: torch.nn.Module = MatrixFactorization(
+            d_model=args.d, user_n=user_n, item_n=item_n
+        ).to(device=torch.device(args.device))
+    elif args.model == "nn":
+        model = Model(d_model=args.d, user_n=user_n, item_n=item_n).to(
+            device=torch.device(args.device)
+        )
+    else:
+        assert False
 
     if args.sampling == "uplift-based-pointwise":
         sampler: Sampler = UpliftBasedPointwiseSampler(
@@ -216,36 +235,59 @@ def train_rmf(
     else:
         assert False
 
+    criterion = torch.nn.BCELoss()
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=args.eta, weight_decay=args.lmda
+    )
     losses = []
+    results = []
 
     for t in range(args.epochs):
-        u, i, r_ui = sampler.sample(
-            rnd=rnd,
+        model.train()
+        u_list, i_list, r_ui_list = sampler.sample(
             args=args,
         )
+        optimizer.zero_grad()
+        y = model.forward(
+            u=torch.LongTensor(u_list).to(device=args.device),
+            i=torch.LongTensor(i_list).to(device=args.device),
+        )
+        r_ui = torch.FloatTensor(r_ui_list).to(device=args.device)
+        loss = criterion(y, r_ui)
+        loss.backward()
+        optimizer.step()
 
-        x_ui = sigmoid((X_u[u] * X_v[i]).sum(axis=-1))
-        r_ui = np.array(r_ui)
+        losses.append(loss.item())
 
-        eps = 1e-8
-        L = -(
-            r_ui * np.log(np.maximum(eps, x_ui))
-            + (1 - r_ui) * np.log(np.maximum(eps, 1 - x_ui))
-        ).mean()
-        losses.append(L)
         print(
-            f"[{t+1:{len(str(args.epochs))}}/{args.epochs}] {L:.5}",
+            f"[{t+1:{len(str(args.epochs))}}/{args.epochs}] {loss.item():.5}",
             end="\r",
         )
 
-        X_u[u] -= args.eta * (
-            (x_ui - r_ui).reshape(-1, 1) * X_v[i] + 2 * args.lmda * X_u[u]
-        )
-        X_v[i] -= args.eta * (
-            (x_ui - r_ui).reshape(-1, 1) * X_u[u] + 2 * args.lmda * X_v[i]
-        )
+        if (t + 1) % args.eval_step == 0:
+            result = eval_model(
+                model=model, df=df, user_n=user_n, item_n=item_n, args=args
+            )
+            print(result)
+            results.append(result)
 
-    return X_u, X_v, losses
+    return model, losses, results
+
+
+def eval_model(
+    model: torch.nn.Module, df: pd.DataFrame, user_n: int, item_n: int, args: Args
+) -> dict:
+    model.eval()
+
+    rec_list = []
+    for u in tqdm.tqdm(range(user_n)):
+        y = model.forward(
+            u=torch.LongTensor([u] * item_n).to(device=args.device),
+            i=torch.arange(item_n).to(device=args.device),
+        )
+        rec_list.append(y.argsort().cpu().detach().numpy()[::-1][: max(TOP_K)].tolist())
+
+    return eval(rec_list=rec_list, df=df, args=args)
 
 
 def add_record(args: Args, evaluations: dict) -> None:
@@ -259,5 +301,15 @@ def add_record(args: Args, evaluations: dict) -> None:
         json.dump(record, f, indent=4, sort_keys=True)
 
 
-def sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1 / (1 + np.exp(-x))
+def set_seed(seed: int) -> None:
+    # random
+    random.seed(seed)
+
+    # Numpy
+    np.random.seed(seed)
+
+    # Pytorch
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.mps.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
