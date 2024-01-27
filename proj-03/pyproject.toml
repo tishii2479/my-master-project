@@ -19,6 +19,7 @@ seaborn = "^0.13.1"
 torch = "^2.1.2"
 mypy = "^1.8.0"
 classopt = "^0.2.1"
+pytest = "^7.4.4"
 
 
 [build-system]

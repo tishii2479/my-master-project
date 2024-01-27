@@ -19,7 +19,7 @@ def main() -> None:
 
     args = Args.from_args()  # type: ignore
     print("args:", args)
-    model, losses, results = train_nn(df=df, user_n=user_n, item_n=item_n, args=args)
+    model, losses, results = train(df=df, user_n=user_n, item_n=item_n, args=args)
 
     torch.save(model, f"./model/{args.model}.pt")
 
