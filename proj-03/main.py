@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 
-from lib.util import *
+from src.lib.util import *
 
 plt.style.use("ggplot")
 

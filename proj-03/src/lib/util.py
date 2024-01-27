@@ -7,6 +7,8 @@ import random
 from typing import Optional
 
 import classopt
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -290,15 +292,37 @@ def eval_model(
     return eval(rec_list=rec_list, df=df, args=args)
 
 
-def add_record(args: Args, evaluations: dict) -> None:
+def add_record(args: Args, evaluations: dict, log_dir: str = "log/") -> None:
     record = {"args": vars(args), "evaluations": evaluations}
-    log_path = pathlib.Path("./log/")
+    log_path = pathlib.Path(log_dir)
     if args.exp_name is not None:
         log_path /= args.exp_name
     log_path.mkdir(parents=True, exist_ok=True)
     log_path /= f"{datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}.json"
     with open(log_path, "w") as f:
         json.dump(record, f, indent=4, sort_keys=True)
+
+
+def visualize_losses(
+    losses: list[float],
+) -> tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
+    fig, ax = plt.subplots()
+    ax.plot(losses)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("loss")
+    return fig, ax
+
+
+def visualize_results(
+    results: list[dict],
+    args: Args,
+) -> tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]:
+    df = pd.DataFrame(results)
+    df["epoch"] = (df.index + 1) * args.eval_step
+    fig, ax = plt.subplots()
+    df.plot(x="epoch", ax=ax)
+    ax.set_xlabel("epoch")
+    return fig, ax
 
 
 def set_seed(seed: int) -> None:
